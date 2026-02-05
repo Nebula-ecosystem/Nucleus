@@ -1,0 +1,84 @@
+SERVER SIDE PUBLIC LICENSE  
+Version 1, January 16, 2019
+
+Copyright (C) 2025 Nebula
+Everyone is permitted to copy and distribute verbatim copies of this license document, but changing it is not allowed.
+
+TERMS AND CONDITIONS
+
+0. Definitions.
+
+  “This License” refers to the Server Side Public License, version 1.
+
+  “Copyright” also means copyright-like laws that apply to other kinds of works, such as semiconductor masks.
+
+  “The Program” refers to any copyrightable work licensed under this License.  Each licensee is addressed as “you”.  “Licensees” and “recipients” may be individuals or organizations.
+
+  To “modify” a work means to copy from or adapt all or part of the work in a fashion requiring copyright permission, other than the making of an exact copy.  The resulting work is called a “modified version” of the earlier work or a work “based on” the earlier work.
+
+  A “covered work” means either the unmodified Program or a work based on the Program.
+
+  To “propagate” a work means to do anything with it that, without permission, would make you directly or secondarily liable for infringement under applicable copyright law, except executing it on a computer or modifying a private copy.  Propagation includes copying, distribution (with or without modification), making available to the public, and in some countries other activities as well.
+
+  To “convey” a work means any kind of propagation that enables other parties to make or receive copies.  Mere interaction with a user through a computer network, with no transfer of a copy, is not conveying.
+
+  “Server Use” means making the Program or modified version available for third-party use to provide any services to third parties.  
+  “Service” means a commercial, fee-based, or non-commercial offering that allows third parties (other than your employees or individual contractors) to interact with the functionality of the Program or modified version.
+
+1. Source Code.
+
+  The Program’s “source code” means the preferred form of the Program for making modifications to it.  “Object code” means any non-source form of the Program.
+
+2. Basic Permissions.
+
+  All rights granted under this License are granted for the duration of copyright on the Program, and are irrevocable provided the stated conditions are met.  This License explicitly affirms your unlimited permission to run the unmodified Program.  
+  You may make, run, and propagate covered works that you do not convey, without conditions so long as your license otherwise remains in force.
+
+3. Conveying Composed Works.
+
+  You may create and convey a work containing the Program or a portion of it, either verbatim or with modifications, provided that the Program is not a substantial portion of the larger work.
+
+4. Conveying Modified Versions.
+
+  You may convey a modified version of the Program in source code form provided that you meet all of these conditions:
+
+  a) The modified version must carry prominent notices stating that you modified it and the date of modification.
+
+  b) The modified version must be licensed under this License.
+
+  c) You must license the entire work, as a whole, under this License to any recipient who comes into possession of a copy.
+
+5. Server Use.
+
+  If you make the Program or modified version available to third parties as a **Service**, you must release the entire source code of the modified version and all programs you use to make the Service available.
+
+  This includes, without limitation:
+  - management software
+  - user interfaces
+  - automation tooling
+  - monitoring tools
+  - APIs  
+  - any components used to operate, deploy, or serve the Program
+
+  You must make all such source code available under this License, prominently and publicly.
+
+6. Acceptance Not Required for Having Copies.
+
+  You do not have to accept this License in order to receive or run a copy of the Program.
+
+7. Termination.
+
+  This License terminates if you fail to comply with its terms.  
+  However, if you correct the violation within 30 days, your license is reinstated.
+
+8. Disclaimer of Warranty.
+
+  THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY APPLICABLE LAW.
+
+9. Limitation of Liability.
+
+  IN NO EVENT UNLESS REQUIRED BY LAW WILL ANY COPYRIGHT HOLDER BE LIABLE FOR DAMAGES ARISING FROM THE USE OF THE PROGRAM.
+
+10. Interpretation.
+
+  If any provision of this License is held invalid, the remainder of the License will remain in effect.
