@@ -254,3 +254,9 @@ impl Drop for WSAPollPoller {
         }
     }
 }
+
+impl Default for WSAPollPoller {
+    fn default() -> Self {
+        Self::new()
+    }
+}

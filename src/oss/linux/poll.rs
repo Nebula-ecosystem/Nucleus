@@ -12,8 +12,8 @@
 //!
 //! This backend is selected automatically on Linux targets.
 
-use crate::os_common::poll::{Event, Interest, Waker};
-use crate::platform::default::RawFd;
+use crate::os_common::poll::{Interest, Waker};
+use crate::platform::default::{Event, RawFd};
 
 use libc::{
     EPOLL_CLOEXEC, EPOLL_CTL_ADD, EPOLL_CTL_DEL, EPOLL_CTL_MOD, EPOLLERR, EPOLLHUP, EPOLLIN,

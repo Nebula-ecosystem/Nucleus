@@ -1,5 +1,5 @@
-use crate::os_common::poll::{Event, Interest, Waker};
-use crate::platform::default::RawFd;
+use crate::os_common::poll::{Interest, Waker};
+use crate::platform::default::{Event, RawFd};
 
 use libc::{
     EV_ADD, EV_CLEAR, EV_DELETE, EV_ENABLE, EVFILT_READ, EVFILT_USER, EVFILT_WRITE, NOTE_TRIGGER,
