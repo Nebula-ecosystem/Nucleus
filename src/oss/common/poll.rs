@@ -40,11 +40,14 @@ pub struct Event {
     /// Token associated with the registered file descriptor.
     ///
     /// This token is used to identify the I/O entry inside the reactor.
+    #[allow(dead_code)]
     pub(crate) token: usize,
 
     /// Indicates that the file descriptor is readable.
+    #[allow(dead_code)]
     pub(crate) readable: bool,
 
     /// Indicates that the file descriptor is writable.
+    #[allow(dead_code)]
     pub(crate) writable: bool,
 }
