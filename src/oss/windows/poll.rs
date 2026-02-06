@@ -15,11 +15,9 @@
 //!
 //! This backend is primarily intended for semantic parity and simplicity.
 
-use crate::os_common::poll::{Interest, Waker};
+use crate::os_common::poll::{Event, Interest, Waker};
 use crate::platform::default::RawFd;
-
-use crate::reactor::event::Event;
-use crate::reactor::poller::windows::ensure_winsock;
+use crate::platforms::windows::ensure_winsock;
 
 use std::collections::HashMap;
 use std::io;

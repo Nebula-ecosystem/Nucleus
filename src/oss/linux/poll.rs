@@ -213,3 +213,9 @@ impl EpollPoller {
         Ok(())
     }
 }
+
+impl Default for EpollPoller {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -5,4 +5,10 @@ edition = "2024"
 
 [dependencies]
 libc = "0.2.180"
-windows-sys = { version = "0.61.2", features = ["Win32_Security_Cryptography"] }
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_System_IO",
+    "Win32_Networking_WinSock",
+    "Win32_Storage_FileSystem",
+    "Win32_Security"
+] }
