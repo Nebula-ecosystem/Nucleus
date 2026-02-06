@@ -1,22 +1,59 @@
 //! Windows `WSAPoll`-based poller implementation.
 //!
-//! This module provides a readiness-based Windows backend for Cadentis’ reactor.
-//! It mirrors the semantics of Linux `epoll` and macOS `kqueue` using
-//! non-blocking sockets and `WSAPoll`.
+//! This module provides a readiness-based Windows backend for
+//! Cadentis’ reactor.  It mirrors the semantics of the Linux
+//! `epoll` and macOS
+//! `kqueue` pollers using non-blocking
+//! sockets and `WSAPoll`.
 //!
-//! Responsibilities:
-//! - Register sockets with read/write interests
-//! - Block waiting for I/O readiness events
-//! - Wake the reactor when new commands are submitted
-//! - Support timer-driven wakeups via poll timeouts
+//! # Kernel primitives
 //!
-//! Unlike the IOCP backend, this poller is **readiness-based** and does not
-//! rely on overlapped or completion-based I/O.
+//! | Primitive | Role |
+//! |---|---|
+//! | `WSASocketW` | Create UDP sockets for the wake channel |
+//! | `ioctlsocket(FIONBIO)` | Set sockets to non-blocking mode |
+//! | `WSAPoll` | Block until readiness or timeout |
+//! | `send` / `recv` | Signal and drain the wake channel |
 //!
-//! This backend is primarily intended for semantic parity and simplicity.
+//! # Responsibilities
+//!
+//! * Register and deregister sockets with read/write interests via
+//!   an in-memory `HashMap`.
+//! * Block the reactor thread until at least one socket is ready or
+//!   a timeout expires.
+//! * Wake the reactor from any thread when new commands are submitted
+//!   to the command queue.
+//! * Translate raw `WSAPOLLFD` results into the common `Event`
+//!   type.
+//!
+//! # Wake-up protocol
+//!
+//! During construction the poller creates two non-blocking UDP
+//! sockets bound to `127.0.0.1` and connected to each other.  The
+//! *send* side is cloned into a `Waker`; calling
+//! `Waker::wake()` sends a single byte.  On the next `WSAPoll`
+//! return, the poller detects `POLLIN` on the *receive* side, drains
+//! all pending bytes, and **does not** emit an `Event`.
+//!
+//! Unlike Linux’s `eventfd` or macOS’s `EVFILT_USER`, Windows has no
+//! kernel-level "poke" primitive for `WSAPoll`, so this loopback
+//! socket pair is the cheapest portable alternative.
+//!
+//! # Readiness vs. completion
+//!
+//! This poller is **readiness-based** and does not use overlapped or
+//! IOCP-style completion I/O.  It is intended for semantic parity
+//! with the Unix backends; a future IOCP backend would replace it
+//! for production workloads on Windows.
+//!
+//! # Target selection
+//!
+//! This backend is compiled only when `target_os = "windows"` and
+//! is re-exported by the crate root as `os`.
 
-use crate::os_common::poll::{Event, Interest, Waker};
-use crate::platform::default::{RawFd, ensure_winsock};
+// Re-export
+pub use crate::oss::common::poll::{Event, Interest, Waker};
+use crate::platform::{io::RawFd, utils::ensure_winsock};
 
 use std::collections::HashMap;
 use std::io;
@@ -32,14 +69,32 @@ use windows_sys::Win32::Networking::WinSock::{
 
 /// Windows poller based on `WSAPoll`.
 ///
-/// This poller owns:
-/// - a registry of monitored sockets,
-/// - an internal UDP socket pair used for wake-ups,
-/// - a reusable buffer of `WSAPOLLFD` structures.
+/// `Poller` is the Windows implementation of the reactor’s I/O
+/// multiplexing backend.  It owns:
 ///
-/// The wake-up mechanism allows other threads to interrupt a
-/// blocking `WSAPoll` call.
-pub struct WSAPollPoller {
+/// * **A socket registry** — a `HashMap<RawFd, (token, Interest)>`
+///   that records every monitored socket and its current interest
+///   flags.  On each poll round this map is flattened into a
+///   `Vec<WSAPOLLFD>` passed to `WSAPoll`.
+/// * **A loopback UDP socket pair** — `wake_recv` (receive side) and
+///   `wake_send` (send side), both bound to `127.0.0.1` on an
+///   ephemeral port.  The send side is shared via `Waker`; writing
+///   a byte to it makes `WSAPoll` return immediately.
+/// * **An `Arc<Waker>`** — the thread-safe handle distributed to
+///   executor and timer threads.
+///
+/// # Lifetime
+///
+/// The two wake-up sockets are closed in the [`Drop`] implementation
+/// via `closesocket`.  Registered application sockets are **not**
+/// closed by the poller — they belong to user code.
+///
+/// # Thread safety
+///
+/// `Poller` is [`Send`] **and** [`Sync`].  In practice it is still
+/// owned by a single reactor thread, but the additional `Sync` bound
+/// simplifies generic constraints on Windows.
+pub struct Poller {
     /// Registered sockets: `fd → (token, interest)`.
     reg: HashMap<RawFd, (usize, Interest)>,
 
@@ -53,14 +108,21 @@ pub struct WSAPollPoller {
     waker: Arc<Waker>,
 }
 
-unsafe impl Send for WSAPollPoller {}
-unsafe impl Sync for WSAPollPoller {}
+unsafe impl Send for Poller {}
+unsafe impl Sync for Poller {}
 
 impl Waker {
     /// Wake the poller.
     ///
-    /// This sends a single byte on the internal UDP socket,
-    /// causing `WSAPoll` to return immediately.
+    /// Sends a single byte (`0x01`) on the internal UDP send socket.
+    /// Because the corresponding receive socket is always included in
+    /// the `WSAPOLLFD` array passed to `WSAPoll`, the call returns
+    /// immediately with `POLLIN` on the receive side.
+    ///
+    /// This method is safe to call from **any thread**, any number of
+    /// times — redundant wakes are harmless (the poller drains all
+    /// pending bytes on the receive side before processing I/O
+    /// events).
     pub fn wake(&self) {
         unsafe {
             let buf = [1u8; 1];
@@ -69,13 +131,27 @@ impl Waker {
     }
 }
 
-impl WSAPollPoller {
-    /// Create a new `WSAPollPoller`.
+impl Poller {
+    /// Create a new `Poller` backed by Windows `WSAPoll`.
     ///
-    /// This:
-    /// - initializes Winsock (once per process),
-    /// - creates a UDP socket pair used for wake-ups,
-    /// - configures both sockets as non-blocking.
+    /// This constructor performs four steps:
+    ///
+    /// 1. **`ensure_winsock()`** — one-time WinSock 2.2
+    ///    initialisation (process-wide).
+    /// 2. **`WSASocketW` (recv)** — creates a non-blocking UDP socket
+    ///    bound to `127.0.0.1:0`; the OS assigns an ephemeral port.
+    /// 3. **`WSASocketW` (send)** — creates a second non-blocking UDP
+    ///    socket and `connect`s it to the bound address discovered
+    ///    via `getsockname`.
+    /// 4. Wraps the send socket in an `Arc<Waker>` so other threads
+    ///    can wake the poller.
+    ///
+    /// # Panics
+    ///
+    /// Panics if any of the socket or bind/connect calls fail.  This
+    /// is intentional: if the OS cannot provide the primitives the
+    /// reactor needs, the runtime cannot function and an early, loud
+    /// failure is preferable to a silent one.
     pub fn new() -> Self {
         unsafe {
             ensure_winsock();
@@ -142,34 +218,80 @@ impl WSAPollPoller {
         }
     }
 
-    /// Return the poller waker.
+    /// Return an [`Arc`]-wrapped `Waker` for this poller.
     ///
-    /// The reactor uses this to interrupt `poll()` when new commands arrive.
+    /// The reactor calls this once during setup and distributes clones
+    /// of the `Arc` to every component that may need to interrupt
+    /// polling (e.g. the executor when a future becomes runnable, or
+    /// a timer thread when a deadline expires).
+    ///
+    /// Calling `Waker::wake()` sends a byte on the internal UDP
+    /// socket, causing the next (or current) `WSAPoll` to return.
     pub fn waker(&self) -> Arc<Waker> {
         self.waker.clone()
     }
 
     /// Register a socket with the poller.
+    ///
+    /// Inserts `(token, interest)` into the internal `HashMap`.  The
+    /// entry will be translated into a `WSAPOLLFD` on the next
+    /// [`poll()`](Self::poll) call.
+    ///
+    /// Unlike the Linux and macOS backends, registration does **not**
+    /// issue a syscall — `WSAPoll` is stateless and recomputes the
+    /// poll set from scratch on every invocation.
     pub fn register(&mut self, fd: RawFd, token: usize, interest: Interest) {
         self.reg.insert(fd, (token, interest));
     }
 
-    /// Update interest flags for a registered socket.
+    /// Update interest flags for an already registered socket.
+    ///
+    /// Overwrites the existing entry in the internal `HashMap`.  The
+    /// same `fd` key is reused; both `token` and `interest` may
+    /// change.  The update takes effect on the next
+    /// [`poll()`](Self::poll) call.
     pub fn reregister(&mut self, fd: RawFd, token: usize, interest: Interest) {
         self.reg.insert(fd, (token, interest));
     }
 
     /// Remove a socket from the poller.
+    ///
+    /// Removes the entry from the internal `HashMap`.  After this
+    /// call, the poller will no longer include `fd` in the poll set.
     pub fn deregister(&mut self, fd: RawFd) {
         self.reg.remove(&fd);
     }
 
     /// Poll for I/O readiness events.
     ///
-    /// Blocks until:
-    /// - at least one socket becomes ready,
-    /// - the wake-up socket is triggered,
-    /// - or the optional timeout expires.
+    /// Blocks the calling thread until at least one of the following
+    /// occurs:
+    ///
+    /// * A registered socket becomes readable or writable.
+    /// * The internal `Waker` is triggered by another thread.
+    /// * The optional `timeout` duration elapses (`None` means wait
+    ///   indefinitely).
+    ///
+    /// On each call, the method:
+    ///
+    /// 1. Builds a fresh `Vec<WSAPOLLFD>` from the registry, with the
+    ///    wake-up receive socket at index 0.
+    /// 2. Calls `WSAPoll` with the computed timeout.
+    /// 3. If the wake socket has `POLLIN`, drains all pending bytes
+    ///    (without emitting an `Event`) but continues processing —
+    ///    other sockets may also be ready.
+    /// 4. Maps every remaining ready socket to an `Event` using the
+    ///    token stored in the registry.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Err`] if `WSAPoll` returns `SOCKET_ERROR`.
+    ///
+    /// # Timeout precision
+    ///
+    /// The timeout is converted to milliseconds via
+    /// [`Duration::as_millis()`] and clamped to `i32::MAX`.  Sub-
+    /// millisecond precision is therefore not available.
     pub fn poll(&mut self, events: &mut Vec<Event>, timeout: Option<Duration>) -> io::Result<()> {
         events.clear();
 
@@ -246,7 +368,7 @@ impl WSAPollPoller {
     }
 }
 
-impl Drop for WSAPollPoller {
+impl Drop for Poller {
     fn drop(&mut self) {
         unsafe {
             let _ = closesocket(self.wake_recv);
@@ -255,7 +377,7 @@ impl Drop for WSAPollPoller {
     }
 }
 
-impl Default for WSAPollPoller {
+impl Default for Poller {
     fn default() -> Self {
         Self::new()
     }

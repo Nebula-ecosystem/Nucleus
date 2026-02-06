@@ -10,10 +10,10 @@
 
 ## 📊 Project Status
 
-- [ ] **Event Polling**
-  - [ ] epoll (Linux)
-  - [ ] kqueue (BSD / macOS)
-  - [ ] WSAPoll (Windows)
+- [x] **Event Polling**
+  - [x] epoll (Linux)
+  - [x] kqueue (BSD / macOS)
+  - [x] WSAPoll (Windows)
 
 - [ ] **Filesystem**
   - [ ] Disk space information (free / total / available)
@@ -23,7 +23,7 @@
 
 ## 🚀 Getting Started
 
-This crate is not yet published on crates.io. Add it directly from GitHub:
+This crate is not published on crates.io. Add it directly from GitHub:
 
 ``` toml
 [dependencies]
