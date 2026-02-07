@@ -45,6 +45,9 @@ use super::utils::ensure_winsock;
 /// IPv4 address family constant.
 pub const AF_INET: c_int = WS_AF_INET as c_int;
 
+/// Error code indicating a non-blocking connect is in progress.
+pub const EINPROGRESS: c_int = libc::EINPROGRESS;
+
 /// IPv6 address family constant.
 pub const AF_INET6: c_int = WS_AF_INET6 as c_int;
 
