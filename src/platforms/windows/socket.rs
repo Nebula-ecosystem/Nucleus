@@ -32,15 +32,21 @@ use std::mem;
 use std::net::{Shutdown, SocketAddr};
 
 use windows_sys::Win32::Networking::WinSock::{
-    FIONBIO, INVALID_SOCKET, IPPROTO_IPV6, IPV6_V6ONLY, SD_BOTH, SD_RECEIVE, SD_SEND, SO_ERROR,
-    SO_REUSEADDR, SOCK_STREAM, SOCKADDR, SOCKADDR_STORAGE, SOCKET, SOL_SOCKET, WSAEWOULDBLOCK,
-    accept, bind, connect, getsockname, getsockopt, ioctlsocket, listen, setsockopt, shutdown,
-    socket,
+    AF_INET as WS_AF_INET, AF_INET6 as WS_AF_INET6, FIONBIO, INVALID_SOCKET, IPPROTO_IPV6,
+    IPV6_V6ONLY, SD_BOTH, SD_RECEIVE, SD_SEND, SO_ERROR, SO_REUSEADDR, SOCK_STREAM, SOCKADDR,
+    SOCKADDR_STORAGE, SOCKET, SOL_SOCKET, WSAEWOULDBLOCK, accept, bind, connect, getsockname,
+    getsockopt, ioctlsocket, listen, setsockopt, shutdown, socket,
 };
 
 use super::address::{sockaddr_storage_to_socketaddr, socketaddr_to_storage};
 use super::io::RawFd;
 use super::utils::ensure_winsock;
+
+/// IPv4 address family constant.
+pub const AF_INET: c_int = WS_AF_INET as c_int;
+
+/// IPv6 address family constant.
+pub const AF_INET6: c_int = WS_AF_INET6 as c_int;
 
 /// Put a socket into non-blocking mode.
 ///

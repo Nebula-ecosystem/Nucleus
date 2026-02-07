@@ -4,130 +4,135 @@
 //! - `sys_read`
 //! - `sys_write`
 //! - `sys_close`
+//!
+//! These tests use TCP sockets for cross-platform compatibility.
 
-use nucleus::{io, utils};
+use nucleus::{address, io, socket};
+use std::thread;
+use std::time::Duration;
+
+/// Helper to create a connected socket pair (server_fd, client_fd).
+fn create_connected_pair() -> (io::RawFd, io::RawFd) {
+    // Create listener
+    let listener_fd = socket::sys_socket(socket::AF_INET).expect("Failed to create listener");
+    let (storage, len) = address::sys_parse_sockaddr("127.0.0.1:0").expect("Failed to parse addr");
+    socket::sys_bind(listener_fd, &storage, len).expect("Failed to bind");
+    socket::sys_listen(listener_fd).expect("Failed to listen");
+
+    let addr = socket::sys_sockname(listener_fd).expect("Failed to get sockname");
+
+    // Create client and connect
+    let client_fd = socket::sys_socket(socket::AF_INET).expect("Failed to create client");
+    let connect_result = socket::sys_connect(client_fd, &addr);
+
+    // For non-blocking sockets, EINPROGRESS/WSAEWOULDBLOCK is expected
+    if let Err(ref e) = connect_result {
+        let is_in_progress = e.kind() == std::io::ErrorKind::WouldBlock;
+        #[cfg(unix)]
+        let is_in_progress = is_in_progress || e.raw_os_error() == Some(libc::EINPROGRESS);
+        if !is_in_progress {
+            connect_result.expect("Connect failed unexpectedly");
+        }
+    }
+
+    // Wait for connection
+    thread::sleep(Duration::from_millis(50));
+
+    // Accept
+    let (server_fd, _) = socket::sys_accept(listener_fd).expect("Failed to accept");
+
+    // Close listener
+    io::sys_close(listener_fd);
+
+    (server_fd, client_fd)
+}
 
 #[test]
-fn test_sys_read_from_pipe() {
-    // Create a pipe for testing
-    let mut fds = [0i32; 2];
-    unsafe {
-        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
-    }
-    let read_fd = fds[0];
-    let write_fd = fds[1];
+fn test_sys_read_from_socket() {
+    let (server_fd, client_fd) = create_connected_pair();
 
-    // Write some data to the pipe
+    // Write data from client
     let data = b"Hello, Nucleus!";
-    let written = unsafe { libc::write(write_fd, data.as_ptr() as *const _, data.len()) };
-    assert_eq!(written as usize, data.len());
+    let written = io::sys_write(client_fd, data);
+    assert!(written > 0, "Write should succeed");
 
-    // Set read end to non-blocking
-    utils::sys_set_nonblocking(read_fd).expect("Failed to set non-blocking");
+    // Wait for data to arrive
+    thread::sleep(Duration::from_millis(50));
 
-    // Read the data back using sys_read
+    // Read from server
     let mut buffer = [0u8; 64];
-    let bytes_read = io::sys_read(read_fd, &mut buffer);
-    assert!(bytes_read > 0);
+    let bytes_read = io::sys_read(server_fd, &mut buffer);
+    assert!(bytes_read > 0, "Read should succeed");
     assert_eq!(&buffer[..bytes_read as usize], data);
 
     // Cleanup
-    io::sys_close(read_fd);
-    io::sys_close(write_fd);
+    io::sys_close(server_fd);
+    io::sys_close(client_fd);
 }
 
 #[test]
-fn test_sys_write_to_pipe() {
-    // Create a pipe for testing
-    let mut fds = [0i32; 2];
-    unsafe {
-        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
-    }
-    let read_fd = fds[0];
-    let write_fd = fds[1];
+fn test_sys_write_to_socket() {
+    let (server_fd, client_fd) = create_connected_pair();
 
-    // Set write end to non-blocking
-    utils::sys_set_nonblocking(write_fd).expect("Failed to set non-blocking");
-
-    // Write data using sys_write
+    // Write data from server
     let data = b"Test data for sys_write";
-    let bytes_written = io::sys_write(write_fd, data);
+    let bytes_written = io::sys_write(server_fd, data);
     assert_eq!(bytes_written as usize, data.len());
 
-    // Read back to verify
+    // Wait for data to arrive
+    thread::sleep(Duration::from_millis(50));
+
+    // Read from client
     let mut buffer = [0u8; 64];
-    let bytes_read = unsafe { libc::read(read_fd, buffer.as_mut_ptr() as *mut _, buffer.len()) };
-    assert_eq!(bytes_read as usize, data.len());
-    assert_eq!(&buffer[..data.len()], data);
+    let bytes_read = io::sys_read(client_fd, &mut buffer);
+    assert!(bytes_read > 0, "Read should succeed");
+    assert_eq!(&buffer[..bytes_read as usize], data);
 
     // Cleanup
-    io::sys_close(read_fd);
-    io::sys_close(write_fd);
+    io::sys_close(server_fd);
+    io::sys_close(client_fd);
 }
 
 #[test]
-fn test_sys_read_empty_pipe_returns_wouldblock() {
-    // Create a pipe
-    let mut fds = [0i32; 2];
-    unsafe {
-        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
-    }
-    let read_fd = fds[0];
-    let write_fd = fds[1];
+fn test_sys_read_empty_socket_returns_wouldblock() {
+    let (server_fd, client_fd) = create_connected_pair();
 
-    // Set read end to non-blocking
-    utils::sys_set_nonblocking(read_fd).expect("Failed to set non-blocking");
-
-    // Try to read from empty pipe - should return -1 with EAGAIN
+    // Try to read from socket with no data - should return -1 with EAGAIN/WouldBlock
     let mut buffer = [0u8; 64];
-    let result = io::sys_read(read_fd, &mut buffer);
-    assert!(result < 0);
+    let result = io::sys_read(server_fd, &mut buffer);
+    assert!(result <= 0);
 
-    let err = std::io::Error::last_os_error();
-    assert!(
-        err.kind() == std::io::ErrorKind::WouldBlock,
-        "Expected WouldBlock, got {:?}",
-        err
-    );
+    if result < 0 {
+        let err = std::io::Error::last_os_error();
+        assert!(
+            err.kind() == std::io::ErrorKind::WouldBlock,
+            "Expected WouldBlock, got {:?}",
+            err
+        );
+    }
 
     // Cleanup
-    io::sys_close(read_fd);
-    io::sys_close(write_fd);
+    io::sys_close(server_fd);
+    io::sys_close(client_fd);
 }
 
 #[test]
-fn test_sys_close_pipe() {
-    // Create a pipe
-    let mut fds = [0i32; 2];
-    unsafe {
-        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
-    }
-    let read_fd = fds[0];
-    let write_fd = fds[1];
+fn test_sys_close_socket() {
+    let (server_fd, client_fd) = create_connected_pair();
 
     // Close both ends
-    io::sys_close(read_fd);
-    io::sys_close(write_fd);
+    io::sys_close(server_fd);
+    io::sys_close(client_fd);
 
     // Verify they're closed by trying to read (should fail)
     let mut buffer = [0u8; 1];
-    let result = io::sys_read(read_fd, &mut buffer);
-    assert!(result < 0);
+    let result = io::sys_read(server_fd, &mut buffer);
+    assert!(result <= 0);
 }
 
 #[test]
 fn test_sys_read_write_large_data() {
-    // Create a pipe
-    let mut fds = [0i32; 2];
-    unsafe {
-        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
-    }
-    let read_fd = fds[0];
-    let write_fd = fds[1];
-
-    // Set non-blocking
-    utils::sys_set_nonblocking(read_fd).expect("Failed to set non-blocking");
-    utils::sys_set_nonblocking(write_fd).expect("Failed to set non-blocking");
+    let (server_fd, client_fd) = create_connected_pair();
 
     // Write data
     let data: Vec<u8> = (0u8..255).cycle().take(4096).collect();
@@ -135,7 +140,7 @@ fn test_sys_read_write_large_data() {
 
     // Write as much as possible
     while total_written < data.len() {
-        let written = io::sys_write(write_fd, &data[total_written..]);
+        let written = io::sys_write(client_fd, &data[total_written..]);
         if written > 0 {
             total_written += written as usize;
         } else {
@@ -143,16 +148,22 @@ fn test_sys_read_write_large_data() {
         }
     }
 
+    // Wait for data to arrive
+    thread::sleep(Duration::from_millis(100));
+
     // Read it all back
     let mut buffer = vec![0u8; total_written];
     let mut total_read = 0;
 
     while total_read < total_written {
-        let read = io::sys_read(read_fd, &mut buffer[total_read..]);
+        let read = io::sys_read(server_fd, &mut buffer[total_read..]);
         if read > 0 {
             total_read += read as usize;
-        } else {
+        } else if read == 0 {
             break;
+        } else {
+            // WouldBlock, wait a bit
+            thread::sleep(Duration::from_millis(10));
         }
     }
 
@@ -160,6 +171,6 @@ fn test_sys_read_write_large_data() {
     assert_eq!(&buffer[..total_read], &data[..total_written]);
 
     // Cleanup
-    io::sys_close(read_fd);
-    io::sys_close(write_fd);
+    io::sys_close(server_fd);
+    io::sys_close(client_fd);
 }

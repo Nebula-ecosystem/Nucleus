@@ -21,13 +21,19 @@
 //! [`sys_set_nonblocking`](super::utils::sys_set_nonblocking).
 
 use libc::{
-    AF_INET6, IPPROTO_IPV6, IPV6_V6ONLY, SHUT_RD, SHUT_RDWR, SHUT_WR, SO_ERROR, SO_REUSEADDR,
-    SOCK_STREAM, SOL_SOCKET, accept, bind, c_int, connect, getsockname, getsockopt, listen,
-    setsockopt, shutdown, sockaddr, socket, socklen_t,
+    IPPROTO_IPV6, IPV6_V6ONLY, SHUT_RD, SHUT_RDWR, SHUT_WR, SO_ERROR, SO_REUSEADDR, SOCK_STREAM,
+    SOL_SOCKET, accept, bind, c_int, connect, getsockname, getsockopt, listen, setsockopt,
+    shutdown, sockaddr, socket, socklen_t,
 };
 use std::io;
 use std::mem;
 use std::net::{Shutdown, SocketAddr};
+
+/// IPv4 address family constant.
+pub const AF_INET: c_int = libc::AF_INET;
+
+/// IPv6 address family constant.
+pub const AF_INET6: c_int = libc::AF_INET6;
 
 use super::address::{sockaddr_storage_to_socketaddr, socketaddr_to_storage};
 use super::io::RawFd;

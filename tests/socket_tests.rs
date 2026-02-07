@@ -15,8 +15,11 @@ use std::time::Duration;
 
 #[test]
 fn test_sys_socket_creates_valid_fd() {
-    let fd = socket::sys_socket(libc::AF_INET).expect("Failed to create socket");
+    let fd = socket::sys_socket(socket::AF_INET).expect("Failed to create socket");
+    #[cfg(unix)]
     assert!(fd >= 0, "Socket fd should be non-negative");
+    #[cfg(windows)]
+    assert!(fd != 0, "Socket fd should be valid");
 
     // Cleanup
     io::sys_close(fd);
@@ -24,8 +27,11 @@ fn test_sys_socket_creates_valid_fd() {
 
 #[test]
 fn test_sys_socket_ipv6() {
-    let fd = socket::sys_socket(libc::AF_INET6).expect("Failed to create IPv6 socket");
+    let fd = socket::sys_socket(socket::AF_INET6).expect("Failed to create IPv6 socket");
+    #[cfg(unix)]
     assert!(fd >= 0, "Socket fd should be non-negative");
+    #[cfg(windows)]
+    assert!(fd != 0, "Socket fd should be valid");
 
     // Cleanup
     io::sys_close(fd);
@@ -33,7 +39,7 @@ fn test_sys_socket_ipv6() {
 
 #[test]
 fn test_sys_bind_to_ephemeral_port() {
-    let fd = socket::sys_socket(libc::AF_INET).expect("Failed to create socket");
+    let fd = socket::sys_socket(socket::AF_INET).expect("Failed to create socket");
 
     // Bind to 127.0.0.1:0 (ephemeral port)
     let (storage, len) = address::sys_parse_sockaddr("127.0.0.1:0").expect("Failed to parse addr");
@@ -49,7 +55,7 @@ fn test_sys_bind_to_ephemeral_port() {
 
 #[test]
 fn test_sys_listen() {
-    let fd = socket::sys_socket(libc::AF_INET).expect("Failed to create socket");
+    let fd = socket::sys_socket(socket::AF_INET).expect("Failed to create socket");
 
     let (storage, len) = address::sys_parse_sockaddr("127.0.0.1:0").expect("Failed to parse addr");
     socket::sys_bind(fd, &storage, len).expect("Failed to bind socket");
@@ -63,7 +69,8 @@ fn test_sys_listen() {
 #[test]
 fn test_sys_connect_and_accept() {
     // Create listener
-    let listener_fd = socket::sys_socket(libc::AF_INET).expect("Failed to create listener socket");
+    let listener_fd =
+        socket::sys_socket(socket::AF_INET).expect("Failed to create listener socket");
     let (storage, len) = address::sys_parse_sockaddr("127.0.0.1:0").expect("Failed to parse addr");
     socket::sys_bind(listener_fd, &storage, len).expect("Failed to bind listener");
     socket::sys_listen(listener_fd).expect("Failed to listen");
@@ -73,16 +80,20 @@ fn test_sys_connect_and_accept() {
     // Create client in a thread
     let connect_addr = listener_addr;
     let client_thread = thread::spawn(move || {
-        let client_fd = socket::sys_socket(libc::AF_INET).expect("Failed to create client socket");
+        let client_fd =
+            socket::sys_socket(socket::AF_INET).expect("Failed to create client socket");
 
-        // Connect (may return EINPROGRESS for non-blocking)
+        // Connect (may return EINPROGRESS/WSAEWOULDBLOCK for non-blocking)
         let result = socket::sys_connect(client_fd, &connect_addr);
 
-        // For non-blocking, EINPROGRESS is expected
-        if let Err(ref e) = result
-            && e.raw_os_error() != Some(libc::EINPROGRESS)
-        {
-            result.expect("Connect failed unexpectedly");
+        // For non-blocking, EINPROGRESS/WouldBlock is expected
+        if let Err(ref e) = result {
+            let is_in_progress = e.kind() == std::io::ErrorKind::WouldBlock;
+            #[cfg(unix)]
+            let is_in_progress = is_in_progress || e.raw_os_error() == Some(libc::EINPROGRESS);
+            if !is_in_progress {
+                result.expect("Connect failed unexpectedly");
+            }
         }
 
         // Wait a bit for connection to complete
@@ -98,7 +109,10 @@ fn test_sys_connect_and_accept() {
     thread::sleep(Duration::from_millis(100)); // Give time for connect
 
     let (accepted_fd, peer_addr) = socket::sys_accept(listener_fd).expect("Failed to accept");
+    #[cfg(unix)]
     assert!(accepted_fd >= 0);
+    #[cfg(windows)]
+    assert!(accepted_fd != 0);
     assert_eq!(
         peer_addr.ip(),
         std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
@@ -114,7 +128,7 @@ fn test_sys_connect_and_accept() {
 
 #[test]
 fn test_sys_set_reuseaddr() {
-    let fd = socket::sys_socket(libc::AF_INET).expect("Failed to create socket");
+    let fd = socket::sys_socket(socket::AF_INET).expect("Failed to create socket");
 
     // Set SO_REUSEADDR
     socket::sys_set_reuseaddr(fd).expect("Failed to set reuseaddr");
@@ -125,7 +139,7 @@ fn test_sys_set_reuseaddr() {
 
 #[test]
 fn test_sys_set_v6only() {
-    let fd = socket::sys_socket(libc::AF_INET6).expect("Failed to create IPv6 socket");
+    let fd = socket::sys_socket(socket::AF_INET6).expect("Failed to create IPv6 socket");
 
     // Set IPV6_V6ONLY
     socket::sys_set_v6only(fd, true).expect("Failed to set v6only");
@@ -136,7 +150,7 @@ fn test_sys_set_v6only() {
 
 #[test]
 fn test_sys_get_socket_error() {
-    let fd = socket::sys_socket(libc::AF_INET).expect("Failed to create socket");
+    let fd = socket::sys_socket(socket::AF_INET).expect("Failed to create socket");
 
     // Fresh socket should have no error
     socket::sys_get_socket_error(fd).expect("Fresh socket should have no error");
@@ -148,15 +162,15 @@ fn test_sys_get_socket_error() {
 #[test]
 fn test_sys_shutdown() {
     // Create a connected pair
-    let listener_fd = socket::sys_socket(libc::AF_INET).expect("Failed to create listener");
+    let listener_fd = socket::sys_socket(socket::AF_INET).expect("Failed to create listener");
     let (storage, len) = address::sys_parse_sockaddr("127.0.0.1:0").expect("Failed to parse addr");
     socket::sys_bind(listener_fd, &storage, len).expect("Failed to bind");
     socket::sys_listen(listener_fd).expect("Failed to listen");
 
     let addr = socket::sys_sockname(listener_fd).expect("Failed to get sockname");
 
-    let client_fd = socket::sys_socket(libc::AF_INET).expect("Failed to create client");
-    let _ = socket::sys_connect(client_fd, &addr); // May return EINPROGRESS
+    let client_fd = socket::sys_socket(socket::AF_INET).expect("Failed to create client");
+    let _ = socket::sys_connect(client_fd, &addr); // May return EINPROGRESS/WouldBlock
 
     thread::sleep(Duration::from_millis(50));
 
@@ -177,10 +191,10 @@ fn test_sys_shutdown() {
 
 #[test]
 fn test_sys_ipv6_is_necessary() {
-    let fd = socket::sys_socket(libc::AF_INET6).expect("Failed to create IPv6 socket");
+    let fd = socket::sys_socket(socket::AF_INET6).expect("Failed to create IPv6 socket");
 
     // IPv6 addresses need IPv6-specific handling
-    let _result = socket::sys_ipv6_is_necessary(fd, libc::AF_INET6);
+    let _result = socket::sys_ipv6_is_necessary(fd, socket::AF_INET6);
 
     // Just verify it doesn't crash
     io::sys_close(fd);
@@ -189,14 +203,14 @@ fn test_sys_ipv6_is_necessary() {
 #[test]
 fn test_bind_already_in_use() {
     // Bind to a port
-    let fd1 = socket::sys_socket(libc::AF_INET).expect("Failed to create socket 1");
+    let fd1 = socket::sys_socket(socket::AF_INET).expect("Failed to create socket 1");
     let (storage, len) = address::sys_parse_sockaddr("127.0.0.1:0").expect("Failed to parse addr");
     socket::sys_bind(fd1, &storage, len).expect("Failed to bind first socket");
 
     let bound_addr = socket::sys_sockname(fd1).expect("Failed to get sockname");
 
     // Try to bind another socket to the same address without SO_REUSEADDR
-    let fd2 = socket::sys_socket(libc::AF_INET).expect("Failed to create socket 2");
+    let fd2 = socket::sys_socket(socket::AF_INET).expect("Failed to create socket 2");
     let (storage2, len2) = address::socketaddr_to_storage(&bound_addr);
 
     let result = socket::sys_bind(fd2, &storage2, len2);
