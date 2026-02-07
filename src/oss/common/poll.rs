@@ -99,11 +99,11 @@ pub use crate::platform::io::RawFd;
 pub struct Interest {
     /// `true` to monitor for read readiness (incoming data or
     /// connection-accepted).
-    pub(crate) read: bool,
+    pub read: bool,
 
     /// `true` to monitor for write readiness (buffer space available
     /// or non-blocking connect completed).
-    pub(crate) write: bool,
+    pub write: bool,
 }
 
 impl Interest {
@@ -198,12 +198,14 @@ pub struct Event {
     /// `true` when the descriptor has data available for reading, or
     /// when an error / hang-up condition makes a `read` call return
     /// immediately.
-    pub readable: bool,
+    #[allow(dead_code)]
+    pub(crate) readable: bool,
 
     /// `true` when the descriptor can accept a write without blocking,
     /// or when an error / hang-up condition makes a `write` call
     /// return immediately.
-    pub writable: bool,
+    #[allow(dead_code)]
+    pub(crate) writable: bool,
 }
 
 impl Event {
