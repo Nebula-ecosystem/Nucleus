@@ -18,7 +18,7 @@
 //!
 //! Every socket created by this module is automatically put into
 //! **non-blocking mode** via
-//! [`sys_set_nonblocking`](super::utils::sys_set_nonblocking).
+//! [`sys_set_nonblocking`].
 
 use libc::{
     IPPROTO_IPV6, IPV6_V6ONLY, SHUT_RD, SHUT_RDWR, SHUT_WR, SO_ERROR, SO_REUSEADDR, SOCK_STREAM,
@@ -43,9 +43,9 @@ use super::utils::{safe_close, sys_set_nonblocking};
 ///
 /// Calls `socket(domain, SOCK_STREAM, 0)` and, on success,
 /// immediately puts the resulting file descriptor into non-blocking
-/// mode with [`sys_set_nonblocking`](super::utils::sys_set_nonblocking).
+/// mode with [`sys_set_nonblocking`].
 /// If setting non-blocking mode fails, the descriptor is closed via
-/// [`safe_close`](super::utils::safe_close) to prevent a leak.
+/// [`safe_close`] to prevent a leak.
 ///
 /// # Arguments
 ///
@@ -83,7 +83,7 @@ pub fn sys_socket(domain: c_int) -> io::Result<RawFd> {
 ///
 /// * `fd` — a socket file descriptor returned by [`sys_socket`].
 /// * `addr` — a populated `sockaddr_storage` (see
-///   [`socketaddr_to_storage`](super::address::socketaddr_to_storage)).
+///   [`socketaddr_to_storage`]).
 /// * `len` — byte length of the relevant `sockaddr_in` or
 ///   `sockaddr_in6` inside the storage.
 ///

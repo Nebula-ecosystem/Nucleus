@@ -2,6 +2,12 @@
 name = "nucleus"
 version = "0.1.0"
 edition = "2024"
+authors = ["Enzo Blain <enzoblain@proton.me>"]
+description = "Low-level system crate for the Nebula ecosystem — cross-platform abstraction over OS system calls"
+repository = "https://github.com/Nebula-ecosystem/Nucleus"
+license = "SSPL-1.0"
+keywords = ["nebula", "system", "syscalls", "io", "async"]
+categories = ["os", "network-programming", "asynchronous"]
 
 [dependencies]
 libc = "0.2.180"

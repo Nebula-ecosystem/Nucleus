@@ -1,7 +1,7 @@
 //! OS-specific poller backends.
 //!
 //! This module contains one sub-module per supported operating system,
-//! each providing a [`Poller`] that wraps the native event notification
+//! each providing a `Poller` type that wraps the native event notification
 //! facility:
 //!
 //! | Sub-module | Kernel API | Wake mechanism |

@@ -1,9 +1,14 @@
 //! **Nucleus** — portable system primitives for the Cadentis async runtime.
 //!
-//! Nucleus is the lowest layer of the Nebula stack.  It wraps raw
+//! Nucleus is the lowest layer of the Nebula stack. It wraps raw
 //! operating-system calls behind a uniform Rust interface so that the
 //! reactor, executor, and higher-level I/O types never touch
 //! platform APIs directly.
+//!
+//! The focus is on **minimalism, explicitness, and cross-platform portability**,
+//! rather than on providing high-level abstractions. All system calls are
+//! exposed as thin wrappers with explicit error handling, making the behavior
+//! predictable and auditable.
 //!
 //! # Architecture
 //!
@@ -26,7 +31,9 @@
 //! All downstream code imports through these aliases, making the rest
 //! of Cadentis entirely platform-agnostic.
 //!
-//! # Platform primitives (`platform::*`)
+//! # Module overview
+//!
+//! ## Platform primitives (`platform::*`)
 //!
 //! | Module | Contents |
 //! |---|---|
@@ -36,7 +43,7 @@
 //! | `address` | Bidirectional conversion between [`std::net::SocketAddr`] and the OS-level `sockaddr_storage` / `SOCKADDR_STORAGE` |
 //! | `utils` | Helpers — `sys_set_nonblocking` / `safe_close` (Unix) or `ensure_winsock` / `is_socket` (Windows) |
 //!
-//! # Poller backends (`os::poll`)
+//! ## Poller backends (`os::poll`)
 //!
 //! Every backend exposes the same contract through three shared types
 //! defined in `oss::common::poll`:
@@ -58,13 +65,25 @@
 //!
 //! # Thread safety
 //!
-//! `Poller` is [`Send`] (and additionally [`Sync`] on Windows).  It is
-//! designed to be owned by a **single reactor thread**.  The associated
+//! `Poller` is [`Send`] (and additionally [`Sync`] on Windows). It is
+//! designed to be owned by a **single reactor thread**. The associated
 //! `Waker` is `Send + Sync` and can be cloned freely to let any thread
 //! or task signal the reactor.
 //!
 //! All functions in the `platform` modules are stateless and can be
 //! called from any thread without synchronisation.
+//!
+//! # Design goals
+//!
+//! - Clear separation between platform-specific syscalls and event polling
+//! - Minimal, explicit APIs with no hidden allocations
+//! - Predictable error handling via standard `io::Result`
+//! - Zero-cost abstraction over OS primitives
+//! - Thread-safety guarantees documented per-function
+//!
+//! This crate is not intended to replace full-featured async runtimes or
+//! high-level I/O libraries, but to serve as a small, controlled foundation
+//! for Nebula's internal runtime needs.
 
 pub(crate) mod oss;
 pub(crate) mod platforms;

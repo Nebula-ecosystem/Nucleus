@@ -1,32 +1,80 @@
-//! Platform-agnostic types for the I/O poller.
+//! Platform-agnostic types for event-driven I/O polling.
 //!
-//! This module is the **single source of truth** for the data types
-//! that flow between the reactor and the OS-specific poller backends.
-//! Every poller — regardless of whether it is backed by `epoll`,
-//! `kqueue`, or `WSAPoll` — receives [`Interest`] values when
-//! descriptors are registered and produces [`Event`] values when
-//! readiness is detected.
+//! This module defines the core type system used by all OS-specific poller
+//! implementations across the Nebula runtime. It provides uniform abstractions
+//! over epoll (Linux), kqueue (macOS), and WSAPoll (Windows), ensuring that
+//! the reactor can operate identically regardless of the underlying kernel API.
+//!
+//! # Purpose
+//!
+//! The types defined here represent I/O readiness metadata that flows between
+//! the reactor and the kernel. They are designed to be:
+//! - **lightweight**: no heap allocation, copyable
+//! - **explicit**: clear semantics for registration and notification
+//! - **portable**: identical behavior on all supported platforms
+//! - **opaque**: tokens are reactor-managed identifiers, not raw descriptors
+//!
+//! Every poller backend — whether backed by epoll's edge-triggered events,
+//! kqueue's filter abstraction, or WSAPoll's readiness-based model — consumes
+//! and produces these types, allowing the reactor to remain platform-agnostic.
 //!
 //! # Type overview
 //!
-//! | Type | Role | Direction |
-//! |---|---|---|
-//! | [`Interest`] | Desired readiness conditions (read and/or write) | reactor → poller |
-//! | [`Event`] | Reported readiness for a given token | poller → reactor |
-//! | [`Waker`] | Interrupt a blocking poll from another thread | any thread → poller |
+//! ## [`Interest`]
 //!
-//! # Waker contract
+//! Specifies the I/O directions a file descriptor (or socket) should be
+//! monitored for. It carries two boolean flags:
+//! - `read`: monitor for incoming data or connection-accepted
+//! - `write`: monitor for buffer space available or non-blocking connect
 //!
-//! [`Waker`] wraps the file descriptor (or socket) that the
-//! OS-specific backend uses as its internal wake-up channel.  The
-//! only operation exposed is `wake()`, which is implemented per-OS in
-//! each backend's `impl Waker` block.  The type deliberately does
-//! **not** implement [`Drop`] — the `Poller` that created the
-//! underlying descriptor is responsible for closing it.
+//! An `Interest` is provided when a descriptor is **registered** and may be
+//! updated later via **reregister**. The OS translates these flags into
+//! kernel-specific event masks (e.g. `EPOLLIN | EPOLLOUT`).
 //!
-//! `Waker` is `Send + Sync`, so an [`Arc<Waker>`](std::sync::Arc) can
-//! be cheaply shared with any number of executor or runtime threads
-//! that need to signal the reactor.
+//! ## [`Event`]
+//!
+//! Represents a single readiness notification returned by the poller. Each
+//! event contains:
+//! - `token`: an opaque identifier (typically a slab index) that maps the
+//!   event back to the corresponding I/O resource in the reactor
+//! - `readable` / `writable`: booleans indicating which directions became ready
+//!
+//! Multiple kernel events for the same descriptor may be merged into one
+//! `Event` with the union of readiness flags before being delivered to the
+//! reactor.
+//!
+//! ## [`Waker`]
+//!
+//! A thread-safe handle to the poller's internal wake-up channel. Calling
+//! `Waker::wake()` from any thread causes a blocked `Poller::poll()` to
+//! return immediately, even if no I/O events are pending.
+//!
+//! # Ownership and lifecycle
+//!
+//! - **`Interest`** and **`Event`** are value types (Copy). They are passed
+//!   by value and do not own any resources.
+//! - **`Waker`** wraps a file descriptor (Unix) or socket handle (Windows)
+//!   and is `Send + Sync`. It deliberately does **not** implement `Drop`;
+//!   the `Poller` that created the wake descriptor is responsible for
+//!   cleanup.
+//!
+//! # Relationship with `std::task::Waker`
+//!
+//! This `Waker` is a **reactor-internal** primitive unrelated to the
+//! `std::task::Waker` used by async executors. The bridge between the two
+//! is the executor itself: when an `std::task::Waker` is invoked, the
+//! executor updates its internal task queue and then calls
+//! `nucleus::Waker::wake()` to notify the reactor that new work is available.
+//!
+//! # Design constraints
+//!
+//! All types are intentionally minimal and do not:
+//! - perform any OS calls directly
+//! - own or manage file descriptors
+//! - expose platform-specific details
+//!
+//! Platform-specific behavior is isolated to the backend implementations
+//! (e.g. `oss::linux::poll::Poller`), not these shared types.
 
 use crate::platform::io::RawFd;
 
