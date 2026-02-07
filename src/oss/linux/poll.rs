@@ -45,8 +45,8 @@ pub use crate::oss::common::poll::{Event, Interest, Waker};
 use crate::platform::io::RawFd;
 
 use libc::{
-    EPOLL_CLOEXEC, EPOLL_CTL_ADD, EPOLL_CTL_DEL, EPOLL_CTL_MOD, EPOLLERR, EPOLLHUP, EPOLLIN,
-    EPOLLOUT, epoll_create1, epoll_ctl, epoll_event, epoll_wait,
+    EPOLL_CLOEXEC, EPOLL_CTL_ADD, EPOLL_CTL_DEL, EPOLLERR, EPOLLHUP, EPOLLIN, EPOLLOUT,
+    epoll_create1, epoll_ctl, epoll_event, epoll_wait,
 };
 use std::io;
 use std::sync::Arc;
