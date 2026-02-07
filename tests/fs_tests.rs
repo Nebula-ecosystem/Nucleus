@@ -8,16 +8,47 @@
 use nucleus::{fs, io};
 use std::ffi::CString;
 
+/// Helper to check if an fd is valid (cross-platform).
+/// On Unix, invalid fd is -1; on Windows, it's u64::MAX.
+#[cfg(unix)]
+fn is_valid_fd(fd: io::RawFd) -> bool {
+    fd >= 0
+}
+
+#[cfg(windows)]
+fn is_valid_fd(fd: io::RawFd) -> bool {
+    fd != u64::MAX
+}
+
+/// Get a temporary file path as CString.
+fn temp_path(name: &str) -> CString {
+    let mut path = std::env::temp_dir();
+    path.push(name);
+    CString::new(path.to_str().unwrap()).unwrap()
+}
+
+/// Cleanup helper - removes a file if it exists.
+fn cleanup_file(path: &CString) {
+    let path_str = path.to_str().unwrap();
+    let _ = std::fs::remove_file(path_str);
+}
+
+/// Cleanup helper - removes a directory if it exists.
+fn cleanup_dir(path: &CString) {
+    let path_str = path.to_str().unwrap();
+    let _ = std::fs::remove_dir(path_str);
+}
+
 #[test]
 fn test_sys_open_create_file() {
-    let path = CString::new("/tmp/nucleus_test_create").unwrap();
+    let path = temp_path("nucleus_test_create");
 
     // Clean up any existing file
-    unsafe { libc::unlink(path.as_ptr()) };
+    cleanup_file(&path);
 
     // Create a new file
     let fd = unsafe { fs::sys_open(path.as_ptr(), fs::CREATEFLAGS, 0o644) };
-    assert!(fd >= 0, "Failed to create file, fd = {}", fd);
+    assert!(is_valid_fd(fd), "Failed to create file, fd = {}", fd);
 
     // Write some data to verify it works
     let data = b"test data";
@@ -26,16 +57,19 @@ fn test_sys_open_create_file() {
 
     // Cleanup
     io::sys_close(fd);
-    unsafe { libc::unlink(path.as_ptr()) };
+    cleanup_file(&path);
 }
 
 #[test]
 fn test_sys_open_read_file() {
-    let path = CString::new("/tmp/nucleus_test_read").unwrap();
+    let path = temp_path("nucleus_test_read");
+
+    // Clean up first
+    cleanup_file(&path);
 
     // Create the file first
     let create_fd = unsafe { fs::sys_open(path.as_ptr(), fs::CREATEFLAGS, 0o644) };
-    assert!(create_fd >= 0, "Failed to create file");
+    assert!(is_valid_fd(create_fd), "Failed to create file");
 
     // Write some data
     let data = b"hello world";
@@ -45,7 +79,7 @@ fn test_sys_open_read_file() {
 
     // Open for reading
     let read_fd = unsafe { fs::sys_open(path.as_ptr(), fs::OPENFLAGS, 0) };
-    assert!(read_fd >= 0, "Failed to open file for reading");
+    assert!(is_valid_fd(read_fd), "Failed to open file for reading");
 
     // Read the data back
     let mut buffer = [0u8; 64];
@@ -55,24 +89,27 @@ fn test_sys_open_read_file() {
 
     // Cleanup
     io::sys_close(read_fd);
-    unsafe { libc::unlink(path.as_ptr()) };
+    cleanup_file(&path);
 }
 
 #[test]
 fn test_sys_open_nonexistent_file() {
-    let path = CString::new("/tmp/nucleus_nonexistent_file_12345").unwrap();
+    let path = temp_path("nucleus_nonexistent_file_12345");
+
+    // Ensure it doesn't exist
+    cleanup_file(&path);
 
     // Try to open non-existent file with OPENFLAGS (should fail)
     let fd = unsafe { fs::sys_open(path.as_ptr(), fs::OPENFLAGS, 0) };
-    assert!(fd < 0, "Opening non-existent file should fail");
+    assert!(!is_valid_fd(fd), "Opening non-existent file should fail");
 }
 
 #[test]
 fn test_sys_mkdir() {
-    let path = CString::new("/tmp/nucleus_test_dir").unwrap();
+    let path = temp_path("nucleus_test_dir");
 
     // Remove if exists
-    unsafe { libc::rmdir(path.as_ptr()) };
+    cleanup_dir(&path);
 
     // Create directory
     let result = unsafe { fs::sys_mkdir(path.as_ptr(), 0o755) };
@@ -80,34 +117,43 @@ fn test_sys_mkdir() {
 
     // Verify it exists by trying to create again (should fail)
     let result2 = unsafe { fs::sys_mkdir(path.as_ptr(), 0o755) };
-    assert!(result2 < 0, "Creating existing directory should fail");
+    assert!(result2 != 0, "Creating existing directory should fail");
 
     // Cleanup
-    unsafe { libc::rmdir(path.as_ptr()) };
+    cleanup_dir(&path);
 }
 
 #[test]
 fn test_sys_mkdir_nested_fails() {
-    let path = CString::new("/tmp/nucleus_nested/subdir/deep").unwrap();
+    let mut nested = std::env::temp_dir();
+    nested.push("nucleus_nested_not_exist");
+    nested.push("subdir");
+    nested.push("deep");
+    let path = CString::new(nested.to_str().unwrap()).unwrap();
+
+    // Clean up parent if it somehow exists
+    let _ = std::fs::remove_dir_all(std::env::temp_dir().join("nucleus_nested_not_exist"));
 
     // Creating nested directories should fail (mkdir doesn't create parents)
     let result = unsafe { fs::sys_mkdir(path.as_ptr(), 0o755) };
     assert!(
-        result < 0,
+        result != 0,
         "Creating nested dirs without parents should fail"
     );
 }
 
+// Unix-only test: checks POSIX permission bits
+#[cfg(unix)]
 #[test]
 fn test_sys_open_with_different_modes() {
-    let path = CString::new("/tmp/nucleus_test_modes").unwrap();
+    let path = temp_path("nucleus_test_modes");
 
     // Clean up
-    unsafe { libc::unlink(path.as_ptr()) };
+    cleanup_file(&path);
 
     // Create with restrictive permissions
     let fd = unsafe { fs::sys_open(path.as_ptr(), fs::CREATEFLAGS, 0o600) };
-    assert!(fd >= 0, "Failed to create file with mode 0o600");
+    assert!(is_valid_fd(fd), "Failed to create file with mode 0o600");
     io::sys_close(fd);
 
     // Verify permissions
@@ -120,23 +166,26 @@ fn test_sys_open_with_different_modes() {
     assert_eq!(mode, 0o600, "File mode should be 0o600, got {:o}", mode);
 
     // Cleanup
-    unsafe { libc::unlink(path.as_ptr()) };
+    cleanup_file(&path);
 }
 
 #[test]
 fn test_sys_open_truncates_existing() {
-    let path = CString::new("/tmp/nucleus_test_trunc").unwrap();
+    let path = temp_path("nucleus_test_trunc");
+
+    // Clean up first
+    cleanup_file(&path);
 
     // Create file with some content
     let fd1 = unsafe { fs::sys_open(path.as_ptr(), fs::CREATEFLAGS, 0o644) };
-    assert!(fd1 >= 0);
+    assert!(is_valid_fd(fd1));
     let data = b"original content that is long";
     io::sys_write(fd1, data);
     io::sys_close(fd1);
 
     // Reopen with CREATEFLAGS (should truncate)
     let fd2 = unsafe { fs::sys_open(path.as_ptr(), fs::CREATEFLAGS, 0o644) };
-    assert!(fd2 >= 0);
+    assert!(is_valid_fd(fd2));
 
     // Write shorter content
     let short_data = b"short";
@@ -145,7 +194,7 @@ fn test_sys_open_truncates_existing() {
 
     // Read back and verify truncation
     let fd3 = unsafe { fs::sys_open(path.as_ptr(), fs::OPENFLAGS, 0) };
-    assert!(fd3 >= 0);
+    assert!(is_valid_fd(fd3));
 
     let mut buffer = [0u8; 64];
     let read = io::sys_read(fd3, &mut buffer);
@@ -153,5 +202,5 @@ fn test_sys_open_truncates_existing() {
     assert_eq!(&buffer[..read as usize], short_data);
 
     io::sys_close(fd3);
-    unsafe { libc::unlink(path.as_ptr()) };
+    cleanup_file(&path);
 }
