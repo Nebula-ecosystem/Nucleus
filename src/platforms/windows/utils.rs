@@ -9,8 +9,6 @@
 //!   version negotiation.
 //! * [`ensure_winsock`] — one-time, process-wide WinSock 2.2
 //!   initialisation.
-
-use std::ffi::c_int;
 use std::mem;
 use std::sync::Once;
 

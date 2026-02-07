@@ -251,7 +251,11 @@ impl Poller {
     /// change.  The update takes effect on the next
     /// [`poll()`](Self::poll) call.
     pub fn reregister(&mut self, fd: RawFd, token: usize, interest: Interest) {
-        self.reg.insert(fd, (token, interest));
+        self.reg.remove(&fd);
+
+        if interest.read || interest.write {
+            self.reg.insert(fd, (token, interest));
+        }
     }
 
     /// Remove a socket from the poller.

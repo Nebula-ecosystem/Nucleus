@@ -215,15 +215,15 @@ impl Poller {
 
     /// Update interest flags for an already registered file descriptor.
     ///
-    /// Calls `epoll_ctl(EPOLL_CTL_MOD)` with a new event mask built
-    /// from `interest`.  The `token` is updated as well — the reactor
-    /// may reassign tokens after connection migration.
+    /// This deletes the existing interest for `fd` and re-adds only the
+    /// ones requested by `interest`.  The `token` is updated as well.
     ///
-    /// # Panics (debug)
-    ///
-    /// In debug builds, panics if `epoll_ctl` returns an error (e.g.
-    /// the descriptor was never registered).
+    /// Deletion errors are silently ignored.
     pub fn reregister(&self, fd: RawFd, token: usize, interest: Interest) {
+        unsafe {
+            epoll_ctl(self.epoll, EPOLL_CTL_DEL, fd, std::ptr::null_mut());
+        }
+
         let mut flags = 0;
 
         if interest.read {
@@ -233,12 +233,16 @@ impl Poller {
             flags |= EPOLLOUT;
         }
 
+        if flags == 0 {
+            return;
+        }
+
         let mut event = epoll_event {
             events: flags as u32,
             u64: token as u64,
         };
 
-        let rc = unsafe { epoll_ctl(self.epoll, EPOLL_CTL_MOD, fd, &mut event) };
+        let rc = unsafe { epoll_ctl(self.epoll, EPOLL_CTL_ADD, fd, &mut event) };
         debug_assert_eq!(rc, 0);
     }
 

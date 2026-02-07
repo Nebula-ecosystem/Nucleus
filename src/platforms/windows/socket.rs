@@ -33,7 +33,7 @@ use std::net::{Shutdown, SocketAddr};
 
 use windows_sys::Win32::Networking::WinSock::{
     FIONBIO, INVALID_SOCKET, IPPROTO_IPV6, IPV6_V6ONLY, SD_BOTH, SD_RECEIVE, SD_SEND, SO_ERROR,
-    SO_REUSEADDR, SOCK_STREAM, SOCKADDR, SOCKADDR_STORAGE, SOCKET, SOCKET_ERROR, SOL_SOCKET,
+    SO_REUSEADDR, SOCK_STREAM, SOCKADDR, SOCKADDR_STORAGE, SOCKET, SOL_SOCKET,
     WSAEWOULDBLOCK, accept, bind, connect, getsockname, getsockopt, ioctlsocket, listen,
     setsockopt, shutdown, socket,
 };
