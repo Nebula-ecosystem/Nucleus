@@ -53,13 +53,13 @@ const O_EXCL: i32 = 0x0080;
 /// Default flags for opening a file in read-only mode.
 ///
 /// Equivalent to POSIX `O_RDONLY`.
-pub const OPENFLAGS: u64 = O_RDONLY as u64;
+pub const OPENFLAGS: i32 = O_RDONLY;
 
 /// Default flags for creating (or overwriting) a file in read-write
 /// mode.
 ///
 /// Equivalent to POSIX `O_CREAT | O_RDWR`.
-pub const CREATEFLAGS: u64 = O_CREAT as u64 | O_RDWR as u64;
+pub const CREATEFLAGS: i32 = O_CREAT | O_RDWR;
 
 /// Open a file.
 ///
