@@ -172,10 +172,29 @@ fn test_sys_shutdown() {
     let client_fd = socket::sys_socket(socket::AF_INET).expect("Failed to create client");
     let _ = socket::sys_connect(client_fd, &addr); // May return EINPROGRESS/WouldBlock
 
-    thread::sleep(Duration::from_millis(50));
+    // Accept (retry loop for non-blocking accept)
+    let server_fd = loop {
+        match socket::sys_accept(listener_fd) {
+            Ok((fd, _)) => break fd,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => panic!("Accept failed: {:?}", e),
+        }
+    };
 
-    // Accept
-    let (server_fd, _) = socket::sys_accept(listener_fd).expect("Failed to accept");
+    // Wait for the client-side connection to complete by checking socket error
+    // This is necessary on macOS where the server accept() can complete before
+    // the client-side connect() finishes the TCP handshake
+    for _ in 0..10 {
+        match socket::sys_get_socket_error(client_fd) {
+            Ok(_) => break, // Connection established
+            Err(_) => thread::sleep(Duration::from_millis(10)),
+        }
+    }
+
+    // Verify connection is established
+    socket::sys_get_socket_error(client_fd).expect("Client connection should be established");
 
     // Shutdown the server's write side
     socket::sys_shutdown(server_fd, std::net::Shutdown::Write).expect("Failed to shutdown write");

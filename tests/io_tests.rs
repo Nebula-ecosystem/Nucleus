@@ -35,11 +35,26 @@ fn create_connected_pair() -> (io::RawFd, io::RawFd) {
         }
     }
 
-    // Wait for connection
-    thread::sleep(Duration::from_millis(50));
+    // Accept (retry loop for non-blocking accept)
+    let server_fd = loop {
+        match socket::sys_accept(listener_fd) {
+            Ok((fd, _)) => break fd,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => panic!("Accept failed: {:?}", e),
+        }
+    };
 
-    // Accept
-    let (server_fd, _) = socket::sys_accept(listener_fd).expect("Failed to accept");
+    // Wait for the client-side connection to complete
+    // This prevents race conditions on macOS where accept() can complete
+    // before the client-side connect() finishes the TCP handshake
+    for _ in 0..10 {
+        match socket::sys_get_socket_error(client_fd) {
+            Ok(_) => break,
+            Err(_) => thread::sleep(Duration::from_millis(10)),
+        }
+    }
 
     // Close listener
     io::sys_close(listener_fd);
