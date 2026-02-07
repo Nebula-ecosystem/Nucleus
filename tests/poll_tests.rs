@@ -1,6 +1,6 @@
 //! Poller module tests.
 //!
-//! Tests for the kqueue-based poller on macOS:
+//! Tests for the poller (kqueue on macOS, epoll on Linux, WSAPoll on Windows):
 //! - Poller::new
 //! - Poller::waker
 //! - Poller::register
@@ -8,11 +8,33 @@
 //! - Poller::deregister
 //! - Poller::poll
 //! - Waker::wake
+//!
+//! These tests are cross-platform using sockets instead of pipes.
 
-use nucleus::{address, io, poll, socket, utils};
+use nucleus::{address, io, poll, socket};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+
+/// Helper to create a connected socket pair (server_fd, client_fd).
+fn create_socket_pair() -> (io::RawFd, io::RawFd) {
+    let listener_fd = socket::sys_socket(socket::AF_INET).expect("Failed to create listener");
+    let (storage, len) = address::sys_parse_sockaddr("127.0.0.1:0").expect("Failed to parse addr");
+    socket::sys_bind(listener_fd, &storage, len).expect("Failed to bind");
+    socket::sys_listen(listener_fd).expect("Failed to listen");
+
+    let addr = socket::sys_sockname(listener_fd).expect("Failed to get sockname");
+
+    let client_fd = socket::sys_socket(socket::AF_INET).expect("Failed to create client");
+    let _ = socket::sys_connect(client_fd, &addr); // May return EINPROGRESS/WouldBlock
+
+    thread::sleep(Duration::from_millis(50));
+
+    let (server_fd, _) = socket::sys_accept(listener_fd).expect("Failed to accept");
+    io::sys_close(listener_fd);
+
+    (server_fd, client_fd)
+}
 
 #[test]
 fn test_poller_new() {
@@ -34,29 +56,23 @@ fn test_poller_waker() {
 }
 
 #[test]
-fn test_poller_register_and_poll_pipe() {
+fn test_poller_register_and_poll_socket() {
     let mut poller = poll::Poller::new();
 
-    // Create a pipe
-    let mut fds = [0i32; 2];
-    unsafe {
-        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
-    }
-    let read_fd = fds[0];
-    let write_fd = fds[1];
+    // Create a socket pair
+    let (server_fd, client_fd) = create_socket_pair();
 
-    // Set non-blocking
-    utils::sys_set_nonblocking(read_fd).unwrap();
-    utils::sys_set_nonblocking(write_fd).unwrap();
-
-    // Register read_fd for read interest
+    // Register server_fd for read interest
     let token = 42;
     let interest = poll::Interest::read();
-    poller.register(read_fd, token, interest);
+    poller.register(server_fd, token, interest);
 
-    // Write to pipe to make it readable
+    // Write to client to make server readable
     let data = b"test";
-    let _ = io::sys_write(write_fd, data);
+    let _ = io::sys_write(client_fd, data);
+
+    // Small delay for data to arrive
+    thread::sleep(Duration::from_millis(10));
 
     // Poll should return readable event
     let mut events = Vec::new();
@@ -70,31 +86,24 @@ fn test_poller_register_and_poll_pipe() {
     assert!(event.unwrap().is_readable());
 
     // Cleanup
-    poller.deregister(read_fd);
-    io::sys_close(read_fd);
-    io::sys_close(write_fd);
+    poller.deregister(server_fd);
+    io::sys_close(server_fd);
+    io::sys_close(client_fd);
 }
 
 #[test]
 fn test_poller_write_interest() {
     let mut poller = poll::Poller::new();
 
-    // Create a pipe
-    let mut fds = [0i32; 2];
-    unsafe {
-        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
-    }
-    let read_fd = fds[0];
-    let write_fd = fds[1];
+    // Create a socket pair
+    let (server_fd, client_fd) = create_socket_pair();
 
-    utils::sys_set_nonblocking(write_fd).unwrap();
-
-    // Register write_fd for write interest
+    // Register client for write interest
     let token = 100;
     let interest = poll::Interest::write();
-    poller.register(write_fd, token, interest);
+    poller.register(client_fd, token, interest);
 
-    // Poll should return writable event (pipe is writable when empty)
+    // Poll should return writable event (socket is writable when buffer not full)
     let mut events = Vec::new();
     poller
         .poll(&mut events, Some(Duration::from_millis(100)))
@@ -106,27 +115,20 @@ fn test_poller_write_interest() {
     assert!(event.unwrap().is_writable());
 
     // Cleanup
-    poller.deregister(write_fd);
-    io::sys_close(read_fd);
-    io::sys_close(write_fd);
+    poller.deregister(client_fd);
+    io::sys_close(server_fd);
+    io::sys_close(client_fd);
 }
 
 #[test]
 fn test_poller_timeout() {
     let mut poller = poll::Poller::new();
 
-    // Create a pipe but don't write to it
-    let mut fds = [0i32; 2];
-    unsafe {
-        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
-    }
-    let read_fd = fds[0];
-    let write_fd = fds[1];
-
-    utils::sys_set_nonblocking(read_fd).unwrap();
+    // Create a socket pair but don't write to it
+    let (server_fd, client_fd) = create_socket_pair();
 
     // Register for read (but nothing will be written)
-    poller.register(read_fd, 1, poll::Interest::read());
+    poller.register(server_fd, 1, poll::Interest::read());
 
     // Poll with short timeout - should timeout with no events
     let mut events = Vec::new();
@@ -140,9 +142,9 @@ fn test_poller_timeout() {
     assert!(elapsed >= Duration::from_millis(40), "Should have waited");
 
     // Cleanup
-    poller.deregister(read_fd);
-    io::sys_close(read_fd);
-    io::sys_close(write_fd);
+    poller.deregister(server_fd);
+    io::sys_close(server_fd);
+    io::sys_close(client_fd);
 }
 
 #[test]
@@ -178,24 +180,16 @@ fn test_poller_wake_from_another_thread() {
 fn test_poller_reregister() {
     let mut poller = poll::Poller::new();
 
-    // Create a pipe
-    let mut fds = [0i32; 2];
-    unsafe {
-        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
-    }
-    let read_fd = fds[0];
-    let write_fd = fds[1];
+    // Create a socket pair
+    let (server_fd, client_fd) = create_socket_pair();
 
-    utils::sys_set_nonblocking(read_fd).unwrap();
-    utils::sys_set_nonblocking(write_fd).unwrap();
+    // Register server for read only with token 1
+    poller.register(server_fd, 1, poll::Interest::read());
 
-    // Register for read only with token 1
-    poller.register(read_fd, 1, poll::Interest::read());
+    // Reregister client for write only with token 2
+    poller.reregister(client_fd, 2, poll::Interest::write());
 
-    // Reregister for write only with token 2 (testing write interest after reregister)
-    poller.reregister(write_fd, 2, poll::Interest::write());
-
-    // Poll should return writable event for write_fd with token 2
+    // Poll should return writable event for client_fd with token 2
     let mut events = Vec::new();
     poller
         .poll(&mut events, Some(Duration::from_millis(100)))
@@ -213,34 +207,30 @@ fn test_poller_reregister() {
     );
 
     // Cleanup
-    poller.deregister(read_fd);
-    poller.deregister(write_fd);
-    io::sys_close(read_fd);
-    io::sys_close(write_fd);
+    poller.deregister(server_fd);
+    poller.deregister(client_fd);
+    io::sys_close(server_fd);
+    io::sys_close(client_fd);
 }
 
 #[test]
 fn test_poller_deregister() {
     let mut poller = poll::Poller::new();
 
-    // Create a pipe
-    let mut fds = [0i32; 2];
-    unsafe {
-        assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
-    }
-    let read_fd = fds[0];
-    let write_fd = fds[1];
-
-    utils::sys_set_nonblocking(read_fd).unwrap();
+    // Create a socket pair
+    let (server_fd, client_fd) = create_socket_pair();
 
     // Register
-    poller.register(read_fd, 1, poll::Interest::read());
+    poller.register(server_fd, 1, poll::Interest::read());
 
     // Deregister
-    poller.deregister(read_fd);
+    poller.deregister(server_fd);
 
-    // Write to pipe
-    io::sys_write(write_fd, b"test");
+    // Write to client
+    io::sys_write(client_fd, b"test");
+
+    // Small delay
+    thread::sleep(Duration::from_millis(10));
 
     // Poll should not return event for deregistered fd
     let mut events = Vec::new();
@@ -252,8 +242,8 @@ fn test_poller_deregister() {
     assert!(events.is_empty(), "Should have no events after deregister");
 
     // Cleanup
-    io::sys_close(read_fd);
-    io::sys_close(write_fd);
+    io::sys_close(server_fd);
+    io::sys_close(client_fd);
 }
 
 #[test]
@@ -261,14 +251,14 @@ fn test_poller_socket_connect() {
     let mut poller = poll::Poller::new();
 
     // Create listener
-    let listener = socket::sys_socket(libc::AF_INET).unwrap();
+    let listener = socket::sys_socket(socket::AF_INET).unwrap();
     let addr = address::sys_parse_sockaddr("127.0.0.1:0").unwrap();
     socket::sys_bind(listener, &addr.0, addr.1).unwrap();
     socket::sys_listen(listener).unwrap();
     let bound_addr = socket::sys_sockname(listener).unwrap();
 
     // Create client
-    let client = socket::sys_socket(libc::AF_INET).unwrap();
+    let client = socket::sys_socket(socket::AF_INET).unwrap();
 
     // Register client for write (connect completion)
     poller.register(client, 10, poll::Interest::write());
@@ -296,22 +286,20 @@ fn test_poller_socket_connect() {
 fn test_poller_multiple_fds() {
     let mut poller = poll::Poller::new();
 
-    // Create multiple pipes
-    let mut pipes = Vec::new();
+    // Create multiple socket pairs
+    let mut pairs = Vec::new();
     for i in 0..5 {
-        let mut fds = [0i32; 2];
-        unsafe {
-            assert_eq!(libc::pipe(fds.as_mut_ptr()), 0);
-        }
-        utils::sys_set_nonblocking(fds[0]).unwrap();
-        utils::sys_set_nonblocking(fds[1]).unwrap();
-        poller.register(fds[0], i, poll::Interest::read());
-        pipes.push((fds[0], fds[1]));
+        let (server_fd, client_fd) = create_socket_pair();
+        poller.register(server_fd, i, poll::Interest::read());
+        pairs.push((server_fd, client_fd));
     }
 
-    // Write to some pipes
-    io::sys_write(pipes[1].1, b"data");
-    io::sys_write(pipes[3].1, b"data");
+    // Write to some clients
+    io::sys_write(pairs[1].1, b"data");
+    io::sys_write(pairs[3].1, b"data");
+
+    // Small delay for data to arrive
+    thread::sleep(Duration::from_millis(20));
 
     // Poll
     let mut events = Vec::new();
@@ -324,14 +312,14 @@ fn test_poller_multiple_fds() {
 
     // Check we got the right tokens
     let tokens: Vec<usize> = events.iter().map(|e| e.token()).collect();
-    assert!(tokens.contains(&1), "Expected event for pipe 1");
-    assert!(tokens.contains(&3), "Expected event for pipe 3");
+    assert!(tokens.contains(&1), "Expected event for pair 1");
+    assert!(tokens.contains(&3), "Expected event for pair 3");
 
     // Cleanup
-    for (read_fd, write_fd) in pipes {
-        poller.deregister(read_fd);
-        io::sys_close(read_fd);
-        io::sys_close(write_fd);
+    for (server_fd, client_fd) in pairs {
+        poller.deregister(server_fd);
+        io::sys_close(server_fd);
+        io::sys_close(client_fd);
     }
 }
 

@@ -1,7 +1,7 @@
 //! Platform helpers (Windows).
 //!
 //! Utility functions that don’t fit neatly into the I/O, filesystem,
-//! or socket modules.  On Windows the three main helpers are:
+//! or socket modules.  On Windows the main helpers are:
 //!
 //! * [`is_socket`] — runtime check to distinguish a WinSock
 //!   `SOCKET` from a Win32 `HANDLE` (both are stored as [`RawFd`]).
@@ -9,11 +9,16 @@
 //!   version negotiation.
 //! * [`ensure_winsock`] — one-time, process-wide WinSock 2.2
 //!   initialisation.
+//! * [`sys_set_nonblocking`] — puts a socket into non-blocking mode.
+//! * [`safe_close`] — closes a handle/socket and returns any error.
+
+use std::io;
 use std::mem;
 use std::sync::Once;
 
+use windows_sys::Win32::Foundation::CloseHandle;
 use windows_sys::Win32::Networking::WinSock::{
-    SO_TYPE, SOCKET, SOL_SOCKET, WSADATA, WSAStartup, getsockopt,
+    FIONBIO, SO_TYPE, SOCKET, SOL_SOCKET, WSADATA, WSAStartup, closesocket, getsockopt, ioctlsocket,
 };
 
 use super::io::RawFd;
@@ -86,4 +91,54 @@ pub fn ensure_winsock() {
         let rc = WSAStartup(makeword(2, 2), &mut data as *mut _);
         assert_eq!(rc, 0, "WSAStartup failed: {}", rc);
     });
+}
+
+/// Put a socket into non-blocking mode.
+///
+/// Calls `ioctlsocket(fd, FIONBIO, &1)`.
+///
+/// # Arguments
+///
+/// * `fd` — a WinSock `SOCKET` stored as [`RawFd`].
+///
+/// # Errors
+///
+/// Returns the OS error if `ioctlsocket` fails.
+pub fn sys_set_nonblocking(fd: RawFd) -> io::Result<()> {
+    unsafe {
+        let mut nonblocking: u32 = 1;
+        if ioctlsocket(fd as SOCKET, FIONBIO, &mut nonblocking) != 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Close a handle or socket, returning any OS error.
+///
+/// Unlike [`sys_close`](super::io::sys_close) — which silently
+/// ignores errors — this function propagates the error so the
+/// caller can log or handle it.
+///
+/// # Arguments
+///
+/// * `fd` — the handle or socket to close.
+///
+/// # Errors
+///
+/// Returns the OS error if the close operation fails.
+pub fn safe_close(fd: RawFd) -> io::Result<()> {
+    if is_socket(fd) {
+        let rc = unsafe { closesocket(fd as SOCKET) };
+        if rc != 0 {
+            return Err(io::Error::last_os_error());
+        }
+    } else {
+        let rc = unsafe { CloseHandle(fd as isize) };
+        if rc == 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(())
 }
