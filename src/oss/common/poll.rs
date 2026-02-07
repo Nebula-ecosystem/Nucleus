@@ -76,7 +76,7 @@
 //! Platform-specific behavior is isolated to the backend implementations
 //! (e.g. `oss::linux::poll::Poller`), not these shared types.
 
-use crate::platform::io::RawFd;
+pub use crate::platform::io::RawFd;
 
 /// I/O interest flags.
 ///
