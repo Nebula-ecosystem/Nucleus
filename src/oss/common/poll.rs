@@ -193,19 +193,17 @@ pub struct Event {
     ///
     /// This is the same value that was passed to `Poller::register()`
     /// and is typically a slab index managed by the reactor.
-    pub(crate) token: usize,
+    pub token: usize,
 
     /// `true` when the descriptor has data available for reading, or
     /// when an error / hang-up condition makes a `read` call return
     /// immediately.
-    #[allow(dead_code)]
-    pub(crate) readable: bool,
+    pub readable: bool,
 
     /// `true` when the descriptor can accept a write without blocking,
     /// or when an error / hang-up condition makes a `write` call
     /// return immediately.
-    #[allow(dead_code)]
-    pub(crate) writable: bool,
+    pub writable: bool,
 }
 
 impl Event {
