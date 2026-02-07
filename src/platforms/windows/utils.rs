@@ -135,7 +135,7 @@ pub fn safe_close(fd: RawFd) -> io::Result<()> {
             return Err(io::Error::last_os_error());
         }
     } else {
-        let rc = unsafe { CloseHandle(fd as isize) };
+        let rc = unsafe { CloseHandle(fd as *mut std::ffi::c_void) };
         if rc == 0 {
             return Err(io::Error::last_os_error());
         }
