@@ -44,22 +44,22 @@ use super::io::RawFd;
 ///
 /// These constants mirror the POSIX values so that the rest of the
 /// crate can use the same flag interface on both Unix and Windows.
-const O_RDONLY: i32 = 0x0000;
-const O_WRONLY: i32 = 0x0001;
-const O_RDWR: i32 = 0x0002;
-const O_CREAT: i32 = 0x0100;
-const O_EXCL: i32 = 0x0080;
+const O_RDONLY: RawFd = 0x0000;
+const O_WRONLY: RawFd = 0x0001;
+const O_RDWR: RawFd = 0x0002;
+const O_CREAT: RawFd = 0x0100;
+const O_EXCL: RawFd = 0x0080;
 
 /// Default flags for opening a file in read-only mode.
 ///
 /// Equivalent to POSIX `O_RDONLY`.
-pub const OPENFLAGS: i32 = O_RDONLY;
+pub const OPENFLAGS: RawFd = O_RDONLY;
 
 /// Default flags for creating (or overwriting) a file in read-write
 /// mode.
 ///
 /// Equivalent to POSIX `O_CREAT | O_RDWR`.
-pub const CREATEFLAGS: i32 = O_CREAT | O_RDWR;
+pub const CREATEFLAGS: RawFd = O_CREAT | O_RDWR;
 
 /// Open a file.
 ///
