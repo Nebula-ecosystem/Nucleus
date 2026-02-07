@@ -87,7 +87,7 @@ pub const CREATEFLAGS: RawFd = O_CREAT | O_RDWR;
 ///
 /// `path` must point to a valid, null-terminated C string that
 /// remains valid for the duration of this call.
-pub unsafe fn sys_open(path: *const c_char, flags: i32, _mode: u32) -> RawFd {
+pub unsafe fn sys_open(path: *const c_char, flags: RawFd, _mode: u32) -> RawFd {
     unsafe {
         let access = if flags & O_RDWR != 0 {
             FILE_GENERIC_READ | FILE_GENERIC_WRITE
