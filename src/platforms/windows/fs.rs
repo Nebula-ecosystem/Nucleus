@@ -34,9 +34,7 @@ use std::path::{Component, Path, PathBuf};
 use std::ptr;
 
 use std::os::windows::ffi::OsStrExt;
-use windows_sys::Win32::Foundation::{
-    ERROR_ALREADY_EXISTS, GetLastError, INVALID_HANDLE_VALUE, ULARGE_INTEGER,
-};
+use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
     CREATE_ALWAYS, CREATE_NEW, CreateDirectoryA, CreateFileA, FILE_ATTRIBUTE_NORMAL,
     FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_DELETE,
@@ -211,7 +209,7 @@ pub unsafe fn sys_mkdir(path: *const c_char, _mode: u32) -> RawFd {
 /// The number of available bytes for the calling user, or `0` on error.
 pub fn storage_left(path: &str) -> u64 {
     let wide: Vec<u16> = OsStr::new(path).encode_wide().chain(once(0)).collect();
-    let mut free: ULARGE_INTEGER = unsafe { mem::zeroed() };
+    let mut free: u64 = 0;
 
     let ok = unsafe {
         GetDiskFreeSpaceExW(
@@ -222,7 +220,7 @@ pub fn storage_left(path: &str) -> u64 {
         )
     };
 
-    if ok == 0 { 0 } else { unsafe { free.QuadPart } }
+    if ok == 0 { 0 } else { free }
 }
 
 /// Resolve a path to a lexical absolute path without touching the

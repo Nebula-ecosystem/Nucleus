@@ -105,5 +105,11 @@ pub fn storage_left(path: &str) -> u64 {
         statvfs(c_path.as_ptr(), &mut stat);
     }
 
-    stat.f_bavail as u64 * stat.f_frsize as u64
+    #[cfg(target_os = "linux")]
+    let res = stat.f_bavail * stat.f_frsize;
+
+    #[cfg(target_os = "macos")]
+    let res = stat.f_bavail as u64 * stat.f_frsize;
+
+    res
 }
