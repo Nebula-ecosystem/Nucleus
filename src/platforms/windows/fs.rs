@@ -29,7 +29,6 @@
 use std::ffi::{CStr, OsStr, c_char};
 use std::io;
 use std::iter::once;
-use std::mem;
 use std::path::{Component, Path, PathBuf};
 use std::ptr;
 

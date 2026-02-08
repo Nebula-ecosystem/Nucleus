@@ -170,7 +170,16 @@ fn test_sys_shutdown() {
     let addr = socket::sys_sockname(listener_fd).expect("Failed to get sockname");
 
     let client_fd = socket::sys_socket(socket::AF_INET).expect("Failed to create client");
-    let _ = socket::sys_connect(client_fd, &addr); // May return EINPROGRESS/WouldBlock
+    if let Err(e) = socket::sys_connect(client_fd, &addr) {
+        if e.kind() == std::io::ErrorKind::WouldBlock
+            || e.kind() == std::io::ErrorKind::Interrupted
+            || e.raw_os_error() == Some(36)
+            || e.raw_os_error() == Some(115)
+        {
+        } else {
+            panic!("Connect failed unexpectedly: {:?}", e);
+        }
+    }
 
     // Accept (retry loop for non-blocking accept)
     let server_fd = loop {
@@ -186,10 +195,17 @@ fn test_sys_shutdown() {
     // Wait for the client-side connection to complete by checking socket error
     // This is necessary on macOS where the server accept() can complete before
     // the client-side connect() finishes the TCP handshake
-    for _ in 0..10 {
+    for _ in 0..100 {
         match socket::sys_get_socket_error(client_fd) {
             Ok(_) => break, // Connection established
-            Err(_) => thread::sleep(Duration::from_millis(10)),
+            Err(e)
+                if e.kind() == std::io::ErrorKind::NotConnected
+                    || e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::Interrupted =>
+            {
+                thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => panic!("Client connection failed: {:?}", e),
         }
     }
 
