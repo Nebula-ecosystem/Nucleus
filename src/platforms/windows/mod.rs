@@ -9,7 +9,7 @@
 //! | Module | Contents |
 //! |---|---|
 //! | [`io`] | `RawFd` type alias, `sys_read` / `sys_write` / `sys_close` (auto-dispatches between file HANDLEs and WinSock SOCKETs) |
-//! | [`fs`] | `sys_open` / `sys_mkdir` with POSIX-to-Win32 flag translation |
+//! | [`fs`] | `sys_open` / `sys_mkdir` / `storage_left` with POSIX-to-Win32 flag translation |
 //! | [`socket`] | Full TCP socket lifecycle and option helpers (WinSock) |
 //! | [`address`] | `SocketAddr` ↔ `SOCKADDR_STORAGE` conversions |
 //! | [`utils`] | `is_socket`, `makeword`, `ensure_winsock` |

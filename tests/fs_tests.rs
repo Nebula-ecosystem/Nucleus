@@ -4,6 +4,7 @@
 //! - `sys_open`
 //! - `sys_mkdir`
 //! - Constants: `OPENFLAGS`, `CREATEFLAGS`
+//! - `storage_left`
 
 use nucleus::{fs, io};
 use std::ffi::CString;
@@ -203,4 +204,17 @@ fn test_sys_open_truncates_existing() {
 
     io::sys_close(fd3);
     cleanup_file(&path);
+}
+
+#[test]
+fn test_storage_left_returns_positive_value() {
+    let path = std::env::temp_dir();
+    let path_str = path.to_str().unwrap();
+
+    let available = fs::storage_left(path_str);
+    assert!(
+        available > 0,
+        "Expected positive free space for temp dir; got {}",
+        available
+    );
 }

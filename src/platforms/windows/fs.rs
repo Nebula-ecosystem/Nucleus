@@ -26,16 +26,21 @@
 //! | [`OPENFLAGS`] | `O_RDONLY` | Read an existing file |
 //! | [`CREATEFLAGS`] | `O_CREAT \| O_RDWR` | Create-or-overwrite a file |
 
-use std::ffi::{CStr, c_char};
+use std::ffi::{CStr, OsStr, c_char};
 use std::io;
+use std::iter::once;
+use std::mem;
 use std::path::{Component, Path, PathBuf};
 use std::ptr;
 
-use windows_sys::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError, INVALID_HANDLE_VALUE};
+use std::os::windows::ffi::OsStrExt;
+use windows_sys::Win32::Foundation::{
+    ERROR_ALREADY_EXISTS, GetLastError, INVALID_HANDLE_VALUE, ULARGE_INTEGER,
+};
 use windows_sys::Win32::Storage::FileSystem::{
     CREATE_ALWAYS, CREATE_NEW, CreateDirectoryA, CreateFileA, FILE_ATTRIBUTE_NORMAL,
     FILE_FLAG_BACKUP_SEMANTICS, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_DELETE,
-    FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, GetDiskFreeSpaceExW, OPEN_EXISTING,
 };
 
 use super::io::RawFd;
@@ -189,6 +194,35 @@ pub unsafe fn sys_mkdir(path: *const c_char, _mode: u32) -> RawFd {
             0
         }
     }
+}
+
+/// Return the available storage space (in bytes) for the filesystem at `path`.
+///
+/// Wraps `GetDiskFreeSpaceExW` and returns the bytes available to the
+/// calling user (not the total free bytes).  If the Win32 call fails,
+/// the function returns `0`.
+///
+/// # Arguments
+///
+/// * `path` — a filesystem path to query.
+///
+/// # Returns
+///
+/// The number of available bytes for the calling user, or `0` on error.
+pub fn storage_left(path: &str) -> u64 {
+    let wide: Vec<u16> = OsStr::new(path).encode_wide().chain(once(0)).collect();
+    let mut free: ULARGE_INTEGER = unsafe { mem::zeroed() };
+
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut free as *mut _,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+
+    if ok == 0 { 0 } else { unsafe { free.QuadPart } }
 }
 
 /// Resolve a path to a lexical absolute path without touching the

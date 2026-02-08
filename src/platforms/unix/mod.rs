@@ -9,7 +9,7 @@
 //! | Module | Contents |
 //! |---|---|
 //! | [`io`] | `RawFd` type alias, `sys_read`, `sys_write`, `sys_close` |
-//! | [`fs`] | `sys_open`, `sys_mkdir`, `OPENFLAGS`, `CREATEFLAGS` |
+//! | [`fs`] | `sys_open`, `sys_mkdir`, `storage_left`, `OPENFLAGS`, `CREATEFLAGS` |
 //! | [`socket`] | Full TCP socket lifecycle and option helpers |
 //! | [`address`] | `SocketAddr` ↔ `sockaddr_storage` conversions |
 //! | [`utils`] | `sys_set_nonblocking`, `safe_close` |

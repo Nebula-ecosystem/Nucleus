@@ -8,7 +8,7 @@
 //! | Child module | Provides |
 //! |---|---|
 //! | [`io`](unix::io) | `RawFd` type alias and thin I/O wrappers (`sys_read`, `sys_write`, `sys_close`) |
-//! | [`fs`](unix::fs) | File-system operations (`sys_open`, `sys_mkdir`) and default open-flag constants |
+//! | [`fs`](unix::fs) | File-system operations (`sys_open`, `sys_mkdir`, `storage_left`) and default open-flag constants |
 //! | [`socket`](unix::socket) | Complete TCP socket lifecycle — create, bind, listen, accept, connect, shutdown — plus common socket options |
 //! | [`address`](unix::address) | Bidirectional conversion between [`std::net::SocketAddr`] and the OS-level `sockaddr_storage` |
 //! | [`utils`](unix::utils) | Platform-specific helpers (non-blocking mode, Winsock init, …) |

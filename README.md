@@ -45,18 +45,14 @@
   - [x] ensure_winsock initialization (Windows)
   - [x] is_socket detection (Windows)
 
-- [ ] **Advanced Filesystem**
-  - [ ] Disk space information (free / total / available)
-  - [ ] Cross-platform path normalization
-
-- [ ] **Security Audit**
-  - [ ] Professional audit before production use
+- [x] **Advanced Filesystem**
+  - [x] Disk space information (free / total / available)
 
 ---
 
 ## 🚀 Getting Started
 
-This crate is not yet published on crates.io. Add it directly from GitHub:
+This crate is not published on crates.io. Add it directly from GitHub:
 
 ``` toml
 [dependencies]
