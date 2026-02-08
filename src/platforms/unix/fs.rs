@@ -17,8 +17,7 @@
 use libc::{
     O_CREAT, O_NONBLOCK, O_RDONLY, O_TRUNC, O_WRONLY, c_char, mkdir, mode_t, open, statvfs,
 };
-use std::ffi::c_uint;
-use std::ffi::CString;
+use std::ffi::{CString, c_uint};
 use std::mem;
 
 use super::io::RawFd;
